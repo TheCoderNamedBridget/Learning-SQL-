@@ -1,0 +1,153 @@
+import application.Customer;
+import application.Employee;
+import db.DbCustomer;
+import db.DbEmployee;
+
+import java.sql.*;
+import java.util.List;
+import java.util.Scanner;
+
+/**
+ * This program demonstrates how to connect to an Apache Derby database.
+ 
+ Written by Neal Terrel and Bridget Naylor
+ */
+public class JdbcDemo {
+	public static void main(String[] args) {
+		try {
+
+            String dbURL = "jdbc:derby:C:/Users/bridg/DataGripProjects/Demo;create=true";
+			/*
+			 This database is a Derby database at the specified absolute directory; it will not work if your
+			 database is somewhere else.
+			 Second, we open a Connection with that connection string. This could fail with exceptions for any number
+			 of reasons: a bad connection string, a refused connection, an out-of-date driver, blah blah blah...
+			*/
+
+            Connection conn = DriverManager.getConnection(dbURL);
+			if (conn != null) {
+				System.out.println("Connected to database!");
+			}
+
+			/*
+			 We can now construct a Statement, which represents one request to the database.
+			 We must define this variable outside the try, so we can close it later in the finally.
+			*/
+            Statement stmt = null;
+			try {
+				// Here is our query: give me all the customers!
+				String query = "select * from APP.CUSTOMERS";
+
+				// The Connection creates a Statement object tied to that Connection.
+				stmt = conn.createStatement();
+				// A Statement can execute individual query given its SQL string.
+				ResultSet data = stmt.executeQuery(query);
+
+				/*
+				 executeQuery returns a ResultSet: an Iterator-like object that "walks" through the rows returned
+				 by the query. Each column is converted to an appropriate Java type, like String, Date, int, etc.
+				 rs.next() moves to the next result, and returns False if there was not another result to move to.
+				*/
+
+                while (data.next()) {
+					/*
+					 The various get*() methods return the value at a given column name for the *current row*,
+					 converted to the specified type.
+					*/
+                    String name = data.getString("CUSTOMERNAME");
+					int customerNumber = data.getInt("CUSTOMERNUMBER");
+					System.out.println(customerNumber + ": " + name);
+				}
+			}
+			catch (SQLException e) {
+				throw new Error("Problem", e);
+			}
+			finally {
+                /*
+                 Statements need to be closed after we are done with them. This is often overlooked and can lead
+                 to serious performance problems, including the inability to run more statements.
+                 Putting this in the finally block means the statement will always be closed, even if we encounter
+                 an exception.
+                */
+                if (stmt != null) {
+					stmt.close();
+				}
+			}
+
+			/*
+			 Example #2: the INCORRECT way to do a parameterized query, vulnerable to SQL injection attacks.
+			*/
+			System.out.println();
+			System.out.println("DEMO #2");
+			Scanner scan = new Scanner(System.in);
+			System.out.println("Enter a Customer name:");
+			String customerName = scan.nextLine();
+			
+			System.out.println("Enter a Product namee:");
+			String productName = scan.nextLine();
+
+			/*
+			select ORDERDATE from ORDERS inner join ORDERDETAILS O on ORDERS.ORDERNUMBER = O.ORDERNUMBER
+inner join CUSTOMERS C on C.CUSTOMERNUMBER = ORDERS.CUSTOMERNUMBER
+inner join PRODUCTS P on P.PRODUCTCODE = O.PRODUCTCODE
+where CUSTOMERNAME = 'Euro+ Shopping Channel' and PRODUCTNAME = '1957 Chevy Pickup';
+			*/
+
+			System.out.println("Product name lookup with PreparedStatement:");
+			PreparedStatement prepProduct1 = null;
+			try {
+
+				String query = 
+				"select ORDERDATE from ORDERS inner join ORDERDETAILS O on ORDERS.ORDERNUMBER = O.ORDERNUMBER inner join CUSTOMERS C on C.CUSTOMERNUMBER = ORDERS.CUSTOMERNUMBER inner join PRODUCTS P on P.PRODUCTCODE = O.PRODUCTCODE where CUSTOMERNAME = ? and PRODUCTNAME = ?";
+				prepProduct1 = conn.prepareStatement(query);
+				prepProduct1.setString(1, customerName); // replace the first ? with the sanitized customer's name.
+				prepProduct1.setString(2, productName);
+				ResultSet data = prepProduct1.executeQuery();
+				// Check to see if there is a result.
+				boolean resultSetNotEmpty = data.next();
+				if (!resultSetNotEmpty) {
+					System.out.println("No orders from " + customerName + " of " + productName);
+					
+				}
+				else {
+					System.out.println("Order found on: " + data.getString("ORDERDATE"));
+					while (data.next())
+					{
+						System.out.println("Order found on: " + data.getString("ORDERDATE"));
+					}
+				}
+
+			}
+			catch (SQLException e) {
+				throw new Error("Problem", e);
+			}
+			finally {
+				if (stmt != null) {
+					stmt.close();
+				}
+			}
+			/*
+			Demo #2: using a "3-tier architecture" with a module to create Java application.Customer objects
+			from rows returned by a Connection.
+			 */
+			List<Customer> allCustomers = DbCustomer.getAllCustomers(conn);
+			for (Customer c : allCustomers) {
+				System.out.println("do i get here");
+				Employee e = DbEmployee.getEmployee(conn, c.getSalesRepEmployeeNumber());
+				if (e != null) {
+					System.out.println(c.getCustomerNumber() + ": " + c.getCustomerName() + "; REP " +
+							e.getFirstName() + " " + e.getLastName());
+				}
+				else {
+					System.out.println(c.getCustomerNumber() + ": " + c.getCustomerName());
+				}
+			}
+
+	
+
+		}
+		catch (SQLException ex) {
+			ex.printStackTrace();
+		}
+	}
+}
